@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>XPENG Queue — QR Poster</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/style.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <style>
+    .poster {
+      max-width: 520px; margin: 0 auto; background: #fff; border: 1px solid var(--line); border-radius: 20px;
+      padding: 48px 40px; text-align: center; box-shadow: var(--shadow);
+    }
+    .poster .brand-big { font-size: 34px; font-weight: 700; letter-spacing: 0.22em; }
+    .poster .sub { font-size: 14px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--ink-3); margin-top: 6px; }
+    .poster h1 { font-size: 30px; margin: 28px 0 6px; }
+    .poster .lead { margin: 0 auto 28px; font-size: 16px; }
+    #qr { display: inline-block; padding: 18px; border: 2px solid var(--ink); border-radius: 16px; background: #fff; }
+    #qr img, #qr canvas { display: block; }
+    .url { margin-top: 18px; font-size: 15px; color: var(--ink-2); word-break: break-all; }
+    .steps { display: flex; justify-content: center; gap: 24px; margin-top: 28px; text-align: left; }
+    .steps div { flex: 1; max-width: 140px; font-size: 13px; color: var(--ink-2); line-height: 1.45; }
+    .steps b { display: block; font-size: 22px; color: var(--accent-ink); margin-bottom: 4px; }
+    .cars { display: flex; justify-content: center; gap: 24px; margin-top: 30px; }
+    .cars img { width: 150px; }
+    .controls { display: flex; gap: 10px; justify-content: center; margin: 28px 0; flex-wrap: wrap; }
+    @media print {
+      @page { margin: 12mm; }
+      body { background: #fff; }
+      .topbar, .controls { display: none !important; }
+      .wrap { padding: 0; }
+      .poster { border: 0; box-shadow: none; max-width: none; padding: 20mm 10mm; }
+      .poster h1 { font-size: 34pt; }
+      #qr img, #qr canvas { width: 90mm !important; height: 90mm !important; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/"><span class="logo" aria-hidden="true"></span>XPENG <small>Queue QR Poster</small></a>
+    <nav><a href="/">Kiosk</a><a href="/staff">Staff</a><a href="/display">Lobby display</a></nav>
+  </header>
+
+  <main class="wrap">
+    <div class="controls">
+      <button class="btn" onclick="window.print()">Print poster</button>
+      <a class="btn ghost" id="download" download="xpeng-queue-qr.png">Download QR image</a>
+    </div>
+
+    <section class="poster">
+      <span class="logo" style="width:72px;height:38px;display:block;margin:0 auto 10px"></span>
+      <div class="brand-big">XPENG</div>
+      <div class="sub">Test Drive</div>
+      <h1>Scan to join the queue</h1>
+      <p class="lead">Get your queue number on your phone — we'll text you when a demo car is ready.</p>
+      <div id="qr"></div>
+      <div class="url" id="url"></div>
+      <div class="steps">
+        <div><b>1</b>Point your camera at the code</div>
+        <div><b>2</b>Pick L03 or X9 and enter your number</div>
+        <div><b>3</b>Relax — we'll text you</div>
+      </div>
+      <div class="cars"><img src="/img/l03.png" alt="L03" /><img src="/img/x9.png" alt="X9" /></div>
+    </section>
+  </main>
+
+  <script>
+    // The code points at this site's own registration page, so it's correct wherever the app is hosted.
+    const url = location.origin + '/';
+    document.getElementById('url').textContent = url.replace(/^https?:\/\//, '').replace(/\/$/, '');
+    new QRCode(document.getElementById('qr'), { text: url, width: 260, height: 260, correctLevel: QRCode.CorrectLevel.M });
+    // expose the rendered image for download once the library has drawn it
+    setTimeout(() => {
+      const img = document.querySelector('#qr img');
+      const canvas = document.querySelector('#qr canvas');
+      document.getElementById('download').href = img && img.src ? img.src : canvas.toDataURL('image/png');
+    }, 300);
+  </script>
+</body>
+</html>

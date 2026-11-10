@@ -1,0 +1,6 @@
+node_modules/
+.env
+gateway.env
+data/
+data/licenses/
+.netlify/

@@ -1,0 +1,17 @@
+{
+  "name": "xpeng-drive-test-queue",
+  "version": "1.1.0",
+  "description": "Walk-in test drive queueing for XPENG showrooms (kiosk, staff console, lobby display)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "npx netlify dev",
+    "deploy": "npx netlify deploy --prod"
+  },
+  "dependencies": {
+    "@netlify/blobs": "^8.2.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

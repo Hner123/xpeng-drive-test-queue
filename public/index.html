@@ -1,0 +1,435 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>XPENG Test Drive Queue</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/"><span class="logo" aria-hidden="true"></span>XPENG <small>Test Drive Queue</small></a>
+    <nav><a href="/" class="active">Join queue</a><a href="/display">Lobby display</a></nav>
+  </header>
+
+  <!-- Step 1: join form -->
+  <main class="wrap" id="join">
+    <p class="eyebrow">Book a test drive</p>
+    <h1>Choose your model</h1>
+    <p class="lead">Select the car you'd like to drive and get your queue number. We'll call you when a demo car is ready.</p>
+
+    <div class="models" id="models" role="radiogroup" aria-label="Model"></div>
+
+    <form class="panel" id="form" autocomplete="off">
+      <h2>Your details</h2>
+      <div class="grid2">
+        <div><label for="name">Full name</label><input id="name" type="text" required maxlength="60" placeholder="Juan Dela Cruz" /></div>
+        <div><label for="phone">Mobile number</label><input id="phone" type="tel" required maxlength="16" placeholder="09XX XXX XXXX" /></div>
+        <div><label for="email">E-mail address</label><input id="email" type="email" required maxlength="120" placeholder="you@example.com" autocapitalize="off" /></div>
+        <div><label for="municipality">Municipality / city of residence</label><input id="municipality" type="text" required maxlength="80" placeholder="e.g. Quezon City" /></div>
+        <div>
+          <label for="customer-type">Customer type</label>
+          <select id="customer-type" required>
+            <option value="">Select one…</option>
+            <option value="walk_in">Walk-in</option>
+            <option value="xpeng_ph">Signed up through XPENG Philippines</option>
+            <option value="dealer">Invited by dealer / signed up through dealer</option>
+          </select>
+        </div>
+        <div id="dealer-wrap" hidden><label for="dealer">Inviting dealer</label><input id="dealer" type="text" maxlength="80" placeholder="Dealer name / branch" /></div>
+      </div>
+      <div class="invite-note" id="invite-note" hidden></div>
+      <div class="license">
+        <div class="license-head">
+          <div>
+            <label style="margin:0">Driver's license</label>
+            <div class="muted" style="font-size:13px">Take a photo of the front of your card — we'll read the number and expiry for you. The photo is kept with your registration for verification.</div>
+          </div>
+          <label class="btn ghost sm" for="license-photo" id="scan-btn">📷 Scan license</label>
+          <input type="file" id="license-photo" accept="image/*" capture="environment" hidden />
+        </div>
+        <div class="license-preview" id="license-preview" hidden>
+          <img id="license-img" alt="Your license photo" />
+          <div class="license-status" id="license-status"></div>
+        </div>
+        <div class="grid2" style="margin-top:14px">
+          <div><label for="license-no">License number</label><input id="license-no" type="text" required maxlength="20" placeholder="N01-23-456789" autocapitalize="characters" /></div>
+          <div><label for="license-exp">Expiration date</label><input id="license-exp" type="text" inputmode="numeric" required maxlength="10" placeholder="YYYY/MM/DD" autocomplete="off" /></div>
+        </div>
+        <div class="error" id="license-warn" style="margin-top:4px"></div>
+      </div>
+
+      <label class="check waiver-check"><input type="checkbox" id="license" required /> <span>I have read, understood, and agree to the <button type="button" class="link-inline" id="open-waiver">waiver terms</button></span></label>
+      <button class="btn" id="submit" type="submit" disabled>Get queue number</button>
+      <div class="muted" id="missing" style="font-size:13px;margin-top:10px"></div>
+      <div class="error" id="err"></div>
+    </form>
+  </main>
+
+  <!-- Step 2: ticket -->
+  <main class="wrap ticket" id="ticket" hidden>
+    <p class="eyebrow">Your queue number</p>
+    <div class="panel">
+      <span class="pill" id="t-status"></span>
+      <div class="num" id="t-num"></div>
+      <div class="muted" id="t-name"></div>
+      <img id="t-img" alt="" />
+      <div id="t-model" style="font-weight:600"></div>
+      <div class="stats" id="t-stats">
+        <div><b id="t-pos">–</b><span>Ahead of you</span></div>
+        <div><b id="t-eta">–</b><span>Est. wait</span></div>
+      </div>
+      <div id="t-banner"></div>
+    </div>
+    <p class="muted" style="font-size:14px;margin:20px 0;line-height:1.5">This page updates on its own. Feel free to walk around — your number stays saved on this device, so just come back to this page, or print the ticket and watch the lobby screen.</p>
+    <div class="ticket-actions">
+      <button class="btn block" id="print">Print ticket</button>
+      <button class="btn ghost block" id="new">New registration</button>
+      <button class="link-btn" id="leave">Leave queue</button>
+    </div>
+  </main>
+
+  <!-- Waiver modal: the checkbox can only be ticked by agreeing here -->
+  <div class="modal-backdrop" id="waiver" hidden>
+    <div class="modal modal-wide" role="dialog" aria-modal="true" aria-labelledby="waiver-title">
+      <h2 id="waiver-title">Test Drive Waiver</h2>
+      <div class="modal-body" id="waiver-body">
+        <p>I, the participant, willingly consent to participate in the <b>Auto Focus Pre-Christmas Multibrand Test Drive Festival</b>, hosted by XPENG Philippines (hereafter referred to as "the Event"). By selecting "I have read, understood, and agree to the waiver terms" below, I acknowledge and adhere to the following terms and conditions:</p>
+        <ol>
+          <li><b>Acknowledgment of Risks:</b> I recognize that participating in a test drive event carries inherent risks, which may include, but are not limited to, accidents, personal injury, or damage to property. By participating, I fully acknowledge and accept these risks.</li>
+          <li><b>Release of Liability:</b> I hereby release, indemnify, and hold harmless XPENG Philippines, along with its employees, agents, volunteers, and any event sponsors or partners, from any and all liability for any injury, loss, or damage to persons or property that may arise during the Event.</li>
+          <li><b>Assumption of Responsibility:</b> I acknowledge that I am responsible for operating any vehicle provided during the Event in a safe and responsible manner. I agree to comply with all traffic laws, adhere to instructions from Event organizers, and exercise due care while driving.</li>
+          <li><b>Use of Likeness:</b> I hereby grant XPENG Philippines, Inc. the right to use my image, likeness, or voice in photographs, videos, or any other media for promotional or marketing purposes related to the Event.</li>
+          <li><b>Binding Agreement:</b> I understand that this waiver and release of liability shall be binding upon me, as well as my heirs, executors, administrators, and assigns.</li>
+        </ol>
+        <p>By proceeding, I confirm that I have read and fully understand the terms of this waiver. I acknowledge that my participation in the event is voluntary and that I am aware of the potential risks involved.</p>
+        <p class="muted" style="font-size:13px">I will present a valid driver's license to staff before the test drive. I consent to XPENG Philippines keeping a copy of my license photo and details for verification of this test drive, and I agree to receive SMS updates about my queue number.</p>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn ghost" id="waiver-decline">Cancel</button>
+        <button type="button" class="btn" id="waiver-agree">I agree</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Print-only ticket stub (shown via @media print) -->
+  <section class="stub" id="stub" aria-hidden="true">
+    <div class="stub-head">
+      <div class="stub-brand"><span class="logo" style="width:40px;height:22px;display:block;margin:0 auto 6px"></span>XPENG<br />Test Drive</div>
+      <div class="stub-sub">Your queue ticket</div>
+    </div>
+    <div class="stub-num" id="s-num"></div>
+    <div class="stub-model" id="s-model"></div>
+    <table class="stub-rows">
+      <tr><td>Name</td><td id="s-name"></td></tr>
+      <tr><td>Contact</td><td id="s-phone"></td></tr>
+      <tr><td>License</td><td id="s-license"></td></tr>
+      <tr><td>Date</td><td id="s-date"></td></tr>
+      <tr><td>Position</td><td id="s-pos"></td></tr>
+    </table>
+    <div class="stub-foot">Please keep this ticket and listen for your number.<br />Present your driver's license at the front desk when called.</div>
+  </section>
+
+  <script src="/common.js"></script>
+  <script>
+    let models = [];
+    let selected = null;
+    let myTicketId = new URLSearchParams(location.search).get('t') || localStorage.getItem('xpq-ticket');
+
+    function renderModels() {
+      $('#models').innerHTML = models.map((m) => `
+        <button type="button" class="model" role="radio" aria-checked="${m.id === selected}" data-id="${m.id}">
+          <span class="radio"></span>
+          <div class="name">${esc(m.name)}</div>
+          <div class="tag">${esc(m.tagline)}</div>
+          <img src="${m.image}" alt="XPENG ${esc(m.name)}" />
+          <div class="meta"><span><b>${m.waitingCount}</b> in queue</span><span>Est. wait <b>${m.estWaitMin ? m.estWaitMin + ' min' : 'none'}</b></span></div>
+        </button>`).join('');
+      validate();
+    }
+
+    $('#models').addEventListener('click', (e) => {
+      const card = e.target.closest('.model');
+      if (!card) return;
+      selected = card.dataset.id;
+      renderModels();
+    });
+    // If they reach the button with no car picked, take them back to the cards.
+    $('#missing').addEventListener('click', () => !selected && $('#models').scrollIntoView({ behavior: 'smooth', block: 'center' }));
+
+    function todayLocal() {
+      return new Date().toLocaleDateString('en-CA');
+    }
+    // "Inviting dealer" only applies to customers who came through a dealer.
+    $('#customer-type').addEventListener('change', (e) => {
+      const viaDealer = e.target.value === 'dealer';
+      $('#dealer-wrap').hidden = !viaDealer;
+      if (!viaDealer) $('#dealer').value = '';
+      validate();
+    });
+
+    // Dealer guest list: a mobile number or e-mail on the list fills in and locks the customer type and dealer.
+    let invitedBy = null;
+    let lookupSeq = 0;
+    let lookupTimer;
+    function setInvite(dealer) {
+      if (!dealer && !invitedBy) return;
+      $('#customer-type').disabled = !!dealer;
+      $('#customer-type').value = dealer ? 'dealer' : '';
+      $('#dealer').readOnly = !!dealer;
+      $('#dealer').value = dealer || '';
+      $('#dealer-wrap').hidden = !dealer;
+      $('#invite-note').hidden = !dealer;
+      $('#invite-note').textContent = dealer ? `We found your invitation from ${dealer}.` : '';
+      invitedBy = dealer;
+      validate();
+    }
+    async function checkInvite() {
+      const phone = $('#phone').value;
+      const email = $('#email').value;
+      const seq = ++lookupSeq;
+      if (phone.replace(/\D/g, '').length < 10 && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) return setInvite(null);
+      try {
+        const r = await api('/api/guest-lookup', { method: 'POST', body: { phone, email } });
+        if (seq === lookupSeq) setInvite(r.match ? r.dealer : null);
+      } catch {} // the server still applies the match when they submit
+    }
+    for (const id of ['#phone', '#email']) {
+      $(id).addEventListener('input', () => {
+        clearTimeout(lookupTimer);
+        lookupTimer = setTimeout(checkInvite, 400);
+      });
+    }
+
+    // Expiry is typed as printed on the card (YYYY/MM/DD); slashes are added as you type.
+    $('#license-exp').addEventListener('input', (e) => {
+      const d = e.target.value.replace(/\D/g, '').slice(0, 8);
+      e.target.value = d.length > 6 ? `${d.slice(0, 4)}/${d.slice(4, 6)}/${d.slice(6)}` : d.length > 4 ? `${d.slice(0, 4)}/${d.slice(4)}` : d;
+    });
+    function expiryIso() {
+      const m = $('#license-exp').value.match(/^(\d{4})\/(\d{2})\/(\d{2})$/);
+      if (!m) return null;
+      const [y, mo, d] = [+m[1], +m[2], +m[3]];
+      const dt = new Date(y, mo - 1, d); // local time, so no UTC day-shift
+      const real = dt.getFullYear() === y && dt.getMonth() === mo - 1 && dt.getDate() === d; // rejects 2029/13/40
+      return real ? `${m[1]}-${m[2]}-${m[3]}` : null;
+    }
+    function validate() {
+      const raw = $('#license-exp').value;
+      const exp = expiryIso();
+      const expired = exp && exp < todayLocal();
+      $('#license-warn').textContent = expired
+        ? `This license expired on ${cardDate(exp)}. A valid license is required to test drive.`
+        : raw.length === 10 && !exp ? 'Please enter a valid date as YYYY/MM/DD.' : '';
+      const missing = [
+        !selected && 'choose a model above',
+        !$('#name').value.trim() && 'enter your name',
+        !$('#phone').value.trim() && 'enter your mobile number',
+        !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test($('#email').value.trim()) && 'enter a valid e-mail address',
+        !$('#municipality').value.trim() && 'enter your municipality',
+        !$('#customer-type').value && 'select a customer type',
+        $('#customer-type').value === 'dealer' && !$('#dealer').value.trim() && 'enter the inviting dealer',
+        !$('#license-no').value.trim() && 'enter your license number',
+        !exp && 'enter the expiration date',
+        expired && 'a valid (unexpired) license',
+        !$('#license').checked && 'agree to the waiver',
+      ].filter(Boolean);
+      $('#submit').disabled = missing.length > 0;
+      $('#missing').textContent = missing.length ? 'To continue: ' + missing.join(' · ') : '';
+    }
+    $('#form').addEventListener('input', validate);
+
+    // ---- license scan: downsize the photo in the browser, send it for reading, fill the fields ----
+    function downsize(file, max = 1280) {
+      return new Promise((resolve, reject) => {
+        const url = URL.createObjectURL(file);
+        const img = new Image();
+        img.onload = () => {
+          const scale = Math.min(1, max / Math.max(img.width, img.height));
+          const c = document.createElement('canvas');
+          c.width = Math.round(img.width * scale);
+          c.height = Math.round(img.height * scale);
+          c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+          URL.revokeObjectURL(url);
+          resolve(c.toDataURL('image/jpeg', 0.85));
+        };
+        img.onerror = () => reject(new Error('Could not read that image'));
+        img.src = url;
+      });
+    }
+    let licensePhoto = null; // the downsized JPEG from the last scan, sent along with the registration
+    $('#license-photo').addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const status = $('#license-status');
+      $('#license-preview').hidden = false;
+      $('#scan-btn').classList.add('busy');
+      status.textContent = 'Reading your license…';
+      status.className = 'license-status';
+      try {
+        const dataUrl = await downsize(file);
+        $('#license-img').src = dataUrl;
+        licensePhoto = dataUrl;
+        const r = await api('/api/license-scan', { method: 'POST', body: { image: dataUrl, mediaType: 'image/jpeg' } });
+        if (r.licenseNumber) $('#license-no').value = r.licenseNumber;
+        if (r.expiry) $('#license-exp').value = cardDate(r.expiry);
+        if (r.name && !$('#name').value.trim()) $('#name').value = r.name;
+        const missing = [!r.licenseNumber && 'number', !r.expiry && 'expiry'].filter(Boolean);
+        status.textContent = missing.length
+          ? `Couldn't read the ${missing.join(' and ')} — please type it below.`
+          : r.confidence === 'high' ? 'Read successfully — please double-check the details below.' : 'Read with some uncertainty — please check the details below.';
+        status.className = 'license-status ' + (missing.length ? 'warn' : 'ok');
+      } catch (err) {
+        status.textContent = err.message + ' You can type the details below instead.';
+        status.className = 'license-status warn';
+      } finally {
+        $('#scan-btn').classList.remove('busy');
+        e.target.value = '';
+        validate();
+      }
+    });
+
+    // ---- waiver modal: the box is only tickable through the modal ----
+    const waiver = $('#waiver');
+    function openWaiver() {
+      waiver.hidden = false;
+      $('#waiver-body').scrollTop = 0;
+      requestAnimationFrame(() => waiver.classList.add('open'));
+      $('#waiver-agree').focus();
+    }
+    function closeWaiver(agreed) {
+      waiver.classList.remove('open');
+      setTimeout(() => (waiver.hidden = true), 180);
+      $('#license').checked = agreed;
+      validate();
+    }
+    $('#license').addEventListener('click', (e) => {
+      if (!e.target.checked) return; // unticking is always allowed
+      e.preventDefault(); // don't tick yet — must agree in the modal first
+      openWaiver();
+    });
+    $('#open-waiver').onclick = openWaiver;
+    $('#waiver-agree').onclick = () => closeWaiver(true);
+    $('#waiver-decline').onclick = () => closeWaiver(false);
+    waiver.addEventListener('click', (e) => e.target === waiver && closeWaiver(false));
+    document.addEventListener('keydown', (e) => e.key === 'Escape' && !waiver.hidden && closeWaiver(false));
+
+    $('#form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      $('#err').textContent = '';
+      $('#submit').disabled = true;
+      try {
+        const { ticket } = await api('/api/tickets', {
+          method: 'POST',
+          body: {
+            model: selected,
+            name: $('#name').value,
+            phone: $('#phone').value,
+            email: $('#email').value,
+            municipality: $('#municipality').value,
+            customerType: $('#customer-type').value,
+            dealer: $('#dealer').value,
+            licenseNumber: $('#license-no').value,
+            licenseExpiry: expiryIso(),
+            licensePhoto,
+          },
+        });
+        showTicket(ticket.id);
+      } catch (err) {
+        $('#err').textContent = err.message;
+        validate();
+      }
+    });
+
+    // ---- ticket view ----
+    let lastStatus = null;
+    async function showTicket(id) {
+      myTicketId = id;
+      localStorage.setItem('xpq-ticket', id);
+      history.replaceState(null, '', '/?t=' + id);
+      $('#join').hidden = true;
+      $('#ticket').hidden = false;
+      await refreshTicket();
+    }
+
+    async function refreshTicket() {
+      if (!myTicketId) return;
+      try {
+        const { ticket: t, position } = await api('/api/tickets/' + myTicketId);
+        const m = models.find((x) => x.id === t.model) || {};
+        $('#t-num').textContent = t.number;
+        $('#t-name').textContent = t.name;
+        $('#t-img').src = m.image || '';
+        $('#t-model').textContent = 'XPENG ' + (m.name || t.model);
+        $('#t-status').className = 'pill ' + t.status;
+        $('#t-status').textContent = STATUS_LABEL[t.status];
+        $('#t-stats').hidden = t.status !== 'waiting';
+        $('#t-pos').textContent = Math.max(position - 1, 0);
+        $('#t-eta').textContent = m.minutes ? Math.max(0, Math.ceil((position - 1) / m.units)) * m.minutes + ' min' : '–';
+        $('#t-banner').innerHTML =
+          t.status === 'called' ? '<div class="called-banner">It\'s your turn! Please proceed to the front desk with your driver\'s license.</div>' :
+          t.status === 'driving' ? '<p class="muted">Enjoy your drive!</p>' :
+          t.status === 'done' ? '<p class="muted">Thanks for test driving XPENG.</p>' :
+          t.status === 'noshow' ? '<p class="muted">We called your number but couldn\'t find you. Please see the front desk.</p>' : '';
+        $('#leave').hidden = !['waiting', 'called'].includes(t.status);
+        $('#print').hidden = !['waiting', 'called'].includes(t.status);
+        // fill the print stub
+        $('#s-num').textContent = t.number;
+        $('#s-model').textContent = 'XPENG ' + (m.name || t.model);
+        $('#s-name').textContent = t.name;
+        $('#s-phone').textContent = t.phone;
+        $('#s-license').textContent = t.licenseNumber ? `${t.licenseNumber} · exp ${cardDate(t.licenseExpiry)}` : '—';
+        $('#s-date').textContent = new Date(t.createdAt).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' });
+        $('#s-pos').textContent = t.status === 'waiting' ? position : STATUS_LABEL[t.status];
+        if (t.status === 'called' && lastStatus && lastStatus !== 'called') {
+          chime();
+          navigator.vibrate && navigator.vibrate([300, 150, 300]);
+        }
+        lastStatus = t.status;
+      } catch (err) {
+        if (err.status === 404) resetToForm();
+      }
+    }
+
+    function resetToForm() {
+      myTicketId = null;
+      lastStatus = null;
+      localStorage.removeItem('xpq-ticket');
+      history.replaceState(null, '', '/');
+      $('#form').reset();
+      selected = null;
+      licensePhoto = null;
+      $('#license-preview').hidden = true;
+      setInvite(null);
+      $('#dealer-wrap').hidden = true;
+      renderModels();
+      $('#ticket').hidden = true;
+      $('#join').hidden = false;
+    }
+
+    $('#new').onclick = resetToForm;
+    $('#print').onclick = () => window.print();
+    $('#leave').onclick = async () => {
+      const ok = await confirmModal({
+        title: 'Leave the queue?',
+        message: `Your number ${$('#t-num').textContent} will be released and you'll need to register again to get a new one.`,
+        confirmText: 'Leave queue',
+        cancelText: 'Stay in queue',
+        danger: true,
+      });
+      if (!ok) return;
+      await api(`/api/tickets/${myTicketId}/cancel`, { method: 'POST' }).catch((e) => toast(e.message));
+      refreshTicket();
+    };
+
+    live((state) => {
+      models = state.models;
+      if (!$('#join').hidden) renderModels();
+      if (myTicketId && $('#ticket').hidden) showTicket(myTicketId);
+      else refreshTicket();
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,415 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>XPENG Queue — Staff</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/staff"><span class="logo" aria-hidden="true"></span>XPENG <small>Staff Console</small></a>
+    <nav><a href="/">Kiosk</a><a href="/staff" class="active">Staff</a><a href="/display" target="_blank">Lobby display</a><a href="/qr" target="_blank">QR poster</a><a href="#" id="logout" hidden>Sign out</a></nav>
+  </header>
+
+  <main class="wrap" id="login" style="max-width:420px">
+    <p class="eyebrow">Staff only</p>
+    <h1>Sign in</h1>
+    <form class="panel" id="login-form">
+      <label for="pin">Staff PIN</label>
+      <input id="pin" type="password" inputmode="numeric" autofocus />
+      <div class="error" id="login-err"></div>
+      <button class="btn block" type="submit">Continue</button>
+    </form>
+  </main>
+
+  <main class="wrap" id="console" hidden style="max-width:1280px">
+    <div style="display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap;margin-bottom:28px">
+      <div>
+        <p class="eyebrow" id="date"></p>
+        <h1 style="margin:0">Test drive queue</h1>
+      </div>
+      <div style="margin-left:auto;display:flex;gap:24px;flex-wrap:wrap" id="summary"></div>
+    </div>
+    <div class="cols" id="cols"></div>
+    <section class="panel" style="margin-top:20px">
+      <div class="guest-head">
+        <div>
+          <h2 style="margin:0 0 4px">Daily report</h2>
+          <div class="muted" style="font-size:14px">Excel file with every registration and its test drive status, plus a summary sheet.</div>
+        </div>
+        <div class="guest-actions">
+          <select id="report-day" aria-label="Report day"></select>
+          <button type="button" class="btn sm" id="report-download">Download Excel</button>
+        </div>
+      </div>
+      <div class="guest-result" id="report-result" hidden></div>
+    </section>
+    <section class="panel" style="margin-top:20px">
+      <div class="guest-head">
+        <div>
+          <h2 style="margin:0 0 4px">Dealer guest list</h2>
+          <div class="muted" style="font-size:14px" id="guest-summary"></div>
+        </div>
+        <div class="guest-actions">
+          <button type="button" class="btn ghost sm" id="guest-template">Download template</button>
+          <label class="btn sm" for="guest-file" id="guest-upload">Upload list</label>
+          <input type="file" id="guest-file" accept=".csv,.xlsx,.xls" hidden />
+          <button type="button" class="btn danger sm" id="guest-clear" hidden>Clear list</button>
+        </div>
+      </div>
+      <div class="guest-result" id="guest-result" hidden></div>
+      <div class="guest-dealers" id="guest-dealers"></div>
+    </section>
+    <div style="margin-top:40px;text-align:right">
+      <button class="btn danger sm" id="reset">Archive &amp; reset today's queue</button>
+    </div>
+  </main>
+
+  <script src="/common.js"></script>
+  <script>
+    let pin = sessionStorage.getItem('xpq-pin');
+    let state = null;
+
+    async function login(p) {
+      await api('/api/staff/login', { method: 'POST', pin: p });
+      pin = p;
+      sessionStorage.setItem('xpq-pin', p);
+      $('#login').hidden = true;
+      $('#console').hidden = false;
+      $('#logout').hidden = false;
+      load();
+      api('/api/staff/guests', { pin }).then(renderGuests).catch(() => {});
+      loadReportDays();
+    }
+
+    $('#login-form').addEventListener('submit', (e) => {
+      e.preventDefault();
+      login($('#pin').value).catch((err) => ($('#login-err').textContent = err.message));
+    });
+    $('#logout').onclick = (e) => {
+      e.preventDefault();
+      sessionStorage.removeItem('xpq-pin');
+      location.reload();
+    };
+
+    async function load() {
+      try {
+        state = await api('/api/staff/tickets', { pin });
+        render();
+        checkSentTexts();
+      } catch (err) {
+        if (err.status === 401) $('#logout').click();
+      }
+    }
+
+    // ---- "your turn" SMS status ----
+    const SMS_BADGE = {
+      sending: ['waiting', 'SMS sending…'],
+      sent: ['driving', 'SMS sent'],
+      delivered: ['driving', 'SMS delivered'],
+      failed: ['noshow', 'SMS failed'],
+      no_number: ['done', 'No number'],
+      off: ['done', 'SMS off'],
+    };
+    function smsBadge(t) {
+      const b = t.sms && SMS_BADGE[t.sms.status];
+      if (!b) return '';
+      const tip = t.sms.status === 'failed' ? `Reason: ${t.sms.error || 'unknown'}. Press Recall to try again.` : t.sms.state ? `Gateway: ${t.sms.state}` : '';
+      return ` <span class="pill ${b[0]}" title="${esc(tip)}">${b[1]}</span>`;
+    }
+    function smsSummary(t) {
+      const b = t.sms && SMS_BADGE[t.sms.status];
+      return b ? b[1] : 'no SMS';
+    }
+    // The phone usually picks a text up within 5–25 s, so ask the gateway again after ~20 s, every 30 s, for 15 min.
+    const smsCheckedAt = {};
+    function checkSentTexts() {
+      const now = Date.now();
+      for (const t of state.tickets) {
+        if (!t.sms || t.sms.status !== 'sent' || !t.sms.id) continue;
+        if (now - t.sms.at < 20000 || now - t.sms.at > 15 * 60000 || now - (smsCheckedAt[t.id] || 0) < 30000) continue;
+        smsCheckedAt[t.id] = now;
+        api('/api/staff/sms-status/' + t.id, { method: 'POST', pin })
+          .then(({ sms }) => {
+            if (sms && sms.status !== t.sms.status) load();
+          })
+          .catch(() => {});
+      }
+    }
+
+    function row(t, actions) {
+      const time = t.status === 'waiting' ? `joined ${ago(t.createdAt)}` :
+        t.status === 'called' ? `called ${ago(t.calledAt)}` :
+        t.status === 'driving' ? `driving since ${ago(t.startedAt)}` : (STATUS_LABEL[t.status] + ' · ' + ago(t.finishedAt || t.createdAt));
+      const lic = t.licenseNumber
+        ? `<div>Lic. ${esc(t.licenseNumber)} · exp ${esc(cardDate(t.licenseExpiry))}${t.licenseExpiry && t.licenseExpiry < state.date ? ' <span class="pill expired">Expired</span>' : ''}${t.hasLicensePhoto ? ` · <button type="button" class="link-inline" data-photo="${t.id}">View license</button>` : ''}</div>`
+        : '<div class="muted">No license on file</div>';
+      return `<li>
+        <div class="n">${t.number}</div>
+        <div class="who"><div>${esc(t.name)}</div><div>${esc(t.phone)} · ${time}${smsBadge(t)}</div>${
+          t.email ? `<div>${esc(t.email)} · ${esc(t.municipality)}</div><div>${esc((state.customerTypes || {})[t.customerType] || t.customerType || '')}${t.dealer ? ' — ' + esc(t.dealer) : ''}${t.guestMatched ? ' <span class="pill driving">On guest list</span>' : ''}</div>` : ''
+        }${lic}</div>
+        <div class="acts">${actions.map(([a, label, cls]) => `<button class="btn sm ${cls || 'ghost'}" data-id="${t.id}" data-act="${a}">${label}</button>`).join('')}</div>
+      </li>`;
+    }
+
+    function section(label, items, actions) {
+      return `<div class="section-label">${label} (${items.length})</div>` +
+        (items.length ? `<ul class="list">${items.map((t) => row(t, actions(t))).join('')}</ul>` : '<div class="empty">None</div>');
+    }
+
+    function render() {
+      $('#date').textContent = new Date(state.date + 'T00:00').toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
+      const by = (s) => state.tickets.filter((t) => t.status === s);
+      $('#summary').innerHTML = [['Waiting', by('waiting').length], ['On drive', by('driving').length], ['Completed', by('done').length]]
+        .map(([l, n]) => `<div style="text-align:right"><div style="font-size:28px;font-weight:600">${n}</div><div class="muted" style="font-size:12px;letter-spacing:.1em;text-transform:uppercase">${l}</div></div>`).join('');
+
+      $('#cols').innerHTML = state.models.map((m) => {
+        const mine = state.tickets.filter((t) => t.model === m.id);
+        const pick = (...s) => mine.filter((t) => s.includes(t.status));
+        const waiting = pick('waiting').sort((a, b) => a.createdAt - b.createdAt);
+        const recent = pick('done', 'noshow', 'cancelled').sort((a, b) => (b.finishedAt || 0) - (a.finishedAt || 0)).slice(0, 5);
+        return `<section class="panel">
+          <div class="col-head">
+            <img src="${m.image}" alt="" />
+            <div><div class="name">${esc(m.name)}</div><div class="sub">${m.waitingCount} waiting · ~${m.estWaitMin} min</div></div>
+            <button class="btn accent" data-next="${m.id}" ${waiting.length ? '' : 'disabled'}>Call next</button>
+          </div>
+          ${section('On test drive', pick('driving'), () => [['finish', 'Finish', '']])}
+          ${section('Now calling', pick('called'), () => [['call', 'Recall'], ['start', 'Start drive', ''], ['noshow', 'No-show', 'danger']])}
+          ${section('Waiting', waiting, () => [['call', 'Call'], ['cancel', 'Remove', 'danger']])}
+          ${section('Recent', recent, (t) => (t.status === 'noshow' ? [['requeue', 'Re-queue']] : []))}
+        </section>`;
+      }).join('');
+    }
+
+    // Dealer guest list: uploads add to the list; a repeated mobile number or e-mail replaces its entry.
+    function renderGuests(s) {
+      $('#guest-summary').textContent = s.count
+        ? `${s.count} invited ${s.count === 1 ? 'guest' : 'guests'} · last updated ${new Date(s.updatedAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}`
+        : 'No list yet. Upload one so invited guests are tagged with their dealer automatically.';
+      $('#guest-clear').hidden = !s.count;
+      $('#guest-dealers').innerHTML = s.dealers.map((d) => `<span>${esc(d.dealer)}: ${d.count}</span>`).join('');
+    }
+    function showGuestResult(text, isError) {
+      $('#guest-result').hidden = !text;
+      $('#guest-result').textContent = text;
+      $('#guest-result').classList.toggle('error-text', !!isError);
+    }
+    function loadXlsxLibrary() {
+      if (window.XLSX) return Promise.resolve();
+      return new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+        s.onload = resolve;
+        s.onerror = () => reject(new Error('Could not load the Excel reader. Save the file as CSV and try again.'));
+        document.head.append(s);
+      });
+    }
+    async function fileToCsv(file) {
+      if (/\.csv$/i.test(file.name)) return file.text();
+      await loadXlsxLibrary();
+      const book = XLSX.read(await file.arrayBuffer());
+      // rawNumbers keeps a mobile number stored as a number from turning into 6.39E+11
+      return XLSX.utils.sheet_to_csv(book.Sheets[book.SheetNames[0]], { rawNumbers: true });
+    }
+    $('#guest-file').addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      $('#guest-upload').classList.add('busy');
+      showGuestResult('Uploading…');
+      try {
+        const r = await api('/api/staff/guests', { method: 'POST', pin, body: { csv: await fileToCsv(file) } });
+        renderGuests(r);
+        const skipped = r.skipped.length
+          ? ` ${r.skipped.length} skipped: ${r.skipped.slice(0, 8).map((x) => `row ${x.row} (${x.reason})`).join(', ')}${r.skipped.length > 8 ? ', …' : ''}.`
+          : '';
+        showGuestResult(`${r.added} added, ${r.updated} updated.${skipped}`);
+      } catch (err) {
+        showGuestResult(err.message, true);
+      } finally {
+        $('#guest-upload').classList.remove('busy');
+        e.target.value = '';
+      }
+    });
+    $('#guest-template').onclick = () => {
+      const csv = 'Name,Mobile,E-mail,Dealer\nJuan Dela Cruz,09171234567,juan@example.com,Sample Dealer\n';
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+      a.download = 'dealer-guest-list-template.csv';
+      a.click();
+      URL.revokeObjectURL(a.href);
+    };
+    $('#guest-clear').onclick = async () => {
+      const ok = await confirmModal({
+        title: 'Clear the guest list?',
+        message: 'New registrations will no longer be matched to a dealer until a list is uploaded again. Tickets already issued keep their dealer.',
+        confirmText: 'Clear list',
+        danger: true,
+      });
+      if (!ok) return;
+      try {
+        renderGuests(await api('/api/staff/guests', { method: 'DELETE', pin }));
+        showGuestResult('');
+      } catch (err) {
+        showGuestResult(err.message, true);
+      }
+    };
+
+    // ---- Daily report (Excel) ----
+    // Anyone who registered but never drove counts as a no-show once the day is over.
+    function driveStatus(t, isToday) {
+      switch (t.status) {
+        case 'done': return ['Completed', ''];
+        case 'noshow': return ['No-show', 'Called, did not show up'];
+        case 'cancelled': return ['Cancelled', 'Left the queue or removed by staff'];
+        case 'driving': return isToday ? ['On test drive', 'In progress'] : ['Completed', 'Drive was not marked finished'];
+        case 'called': return isToday ? ['Called', 'In progress'] : ['No-show', 'Called, test drive never started'];
+        default: return isToday ? ['Waiting', 'In progress'] : ['No-show', 'Registered, never called'];
+      }
+    }
+    const manilaTime = (ms) => (ms ? new Date(ms).toLocaleTimeString('en-PH', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' }) : '');
+    const minutesBetween = (a, b) => (a && b ? Math.round((b - a) / 60000) : '');
+    const average = (xs) => (xs.length ? Math.round(xs.reduce((s, x) => s + x, 0) / xs.length) : '');
+
+    function buildReportWorkbook(data) {
+      const isToday = data.date === data.today;
+      const rows = data.tickets.map((t) => {
+        const [status, remarks] = driveStatus(t, isToday);
+        return { t, status, remarks };
+      });
+
+      const list = [
+        ['Queue No.', 'Preferred Model', 'Complete Name', 'Mobile Number', 'E-mail Address', 'Municipality', 'Customer Type', 'Inviting Dealer', 'On Dealer Guest List',
+          'License No.', 'License Expiry', 'Test Drive Status', 'Remarks', 'Registered', 'Called', 'Drive Started', 'Finished', 'Wait (min)', 'Drive (min)'],
+        ...rows.map(({ t, status, remarks }) => [
+          t.number, t.model, t.name, t.phone, t.email || '', t.municipality || '', data.customerTypes[t.customerType] || '', t.dealer || '', t.guestMatched ? 'Yes' : 'No',
+          t.licenseNumber || '', cardDate(t.licenseExpiry), status, remarks, manilaTime(t.createdAt), manilaTime(t.calledAt), manilaTime(t.startedAt),
+          t.status === 'done' || t.status === 'noshow' || t.status === 'cancelled' ? manilaTime(t.finishedAt) : '', minutesBetween(t.createdAt, t.calledAt), minutesBetween(t.startedAt, t.finishedAt),
+        ]),
+      ];
+
+      const count = (subset, s) => subset.filter((r) => r.status === s).length;
+      const statusCols = isToday ? ['Completed', 'No-show', 'Cancelled', 'On test drive', 'Called', 'Waiting'] : ['Completed', 'No-show', 'Cancelled'];
+      const line = (label, subset) => [
+        label, subset.length, ...statusCols.map((s) => count(subset, s)),
+        average(subset.filter((r) => r.t.calledAt).map((r) => minutesBetween(r.t.createdAt, r.t.calledAt))),
+        average(subset.filter((r) => r.t.status === 'done' && r.t.startedAt).map((r) => minutesBetween(r.t.startedAt, r.t.finishedAt))),
+      ];
+      const header = ['', 'Registered', ...statusCols, 'Avg wait (min)', 'Avg drive (min)'];
+      const group = (title, keyOf, labelOf) => {
+        const keys = [...new Set(rows.map((r) => keyOf(r.t)))].filter((k) => k);
+        return keys.length ? [[], [title], header, ...keys.map((k) => line(labelOf(k), rows.filter((r) => keyOf(r.t) === k)))] : [];
+      };
+      const summary = [
+        ['XPENG Test Drive — Daily Report'],
+        ['Date', cardDate(data.date) + (isToday ? ' (today, still in progress)' : '')],
+        ['Generated', new Date().toLocaleString('en-PH', { timeZone: 'Asia/Manila' })],
+        [],
+        header,
+        line('All models', rows),
+        ...data.models.map((m) => line(m.name, rows.filter((r) => r.t.model === m.id))),
+        ...group('By customer type', (t) => t.customerType, (k) => data.customerTypes[k] || k),
+        ...group('By inviting dealer', (t) => t.dealer, (k) => k),
+      ];
+
+      const book = XLSX.utils.book_new();
+      const listSheet = XLSX.utils.aoa_to_sheet(list);
+      listSheet['!cols'] = [8, 10, 24, 15, 26, 18, 30, 22, 12, 16, 12, 16, 30, 10, 10, 12, 10, 9, 9].map((wch) => ({ wch }));
+      listSheet['!autofilter'] = { ref: XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: list.length - 1, c: list[0].length - 1 } }) };
+      const summarySheet = XLSX.utils.aoa_to_sheet(summary);
+      summarySheet['!cols'] = [{ wch: 38 }, ...header.slice(1).map(() => ({ wch: 14 }))];
+      XLSX.utils.book_append_sheet(book, summarySheet, 'Summary');
+      XLSX.utils.book_append_sheet(book, listSheet, 'Registrations');
+      return book;
+    }
+
+    async function loadReportDays() {
+      try {
+        const { days } = await api('/api/staff/report-days', { pin });
+        const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' });
+        $('#report-day').innerHTML = days.map((d) => `<option value="${d}">${cardDate(d)}${d === today ? ' (today)' : ''}</option>`).join('');
+      } catch {}
+    }
+
+    $('#report-download').onclick = async () => {
+      const day = $('#report-day').value;
+      if (!day) return;
+      const btn = $('#report-download');
+      btn.classList.add('busy');
+      $('#report-result').hidden = true;
+      try {
+        const [data] = await Promise.all([api('/api/staff/report/' + day, { pin }), loadXlsxLibrary()]);
+        XLSX.writeFile(buildReportWorkbook(data), `xpeng-test-drive-${day}.xlsx`);
+        $('#report-result').hidden = false;
+        $('#report-result').classList.remove('error-text');
+        $('#report-result').textContent = data.tickets.length
+          ? `Downloaded ${data.tickets.length} registration${data.tickets.length === 1 ? '' : 's'} for ${cardDate(day)}.`
+          : `No registrations on ${cardDate(day)}; the file is empty.`;
+      } catch (err) {
+        $('#report-result').hidden = false;
+        $('#report-result').classList.add('error-text');
+        $('#report-result').textContent = err.message;
+      } finally {
+        btn.classList.remove('busy');
+      }
+    };
+
+    // License photo viewer: fetched with the staff PIN, shown in a modal, never linked directly.
+    async function viewLicense(id, number) {
+      const res = await fetch('/api/staff/license/' + id, { headers: { 'x-staff-pin': pin } });
+      if (!res.ok) return toast('No license photo on file');
+      const url = URL.createObjectURL(await res.blob());
+      const wrap = document.createElement('div');
+      wrap.className = 'modal-backdrop';
+      wrap.innerHTML = `<div class="modal modal-wide" role="dialog" aria-modal="true"><h2>License — ${esc(number)}</h2><img src="${url}" alt="Driver's license" style="width:100%;border-radius:10px;border:1px solid var(--line)" /><div class="modal-actions"><button type="button" class="btn ghost" data-close>Close</button></div></div>`;
+      const close = () => { wrap.classList.remove('open'); setTimeout(() => { wrap.remove(); URL.revokeObjectURL(url); }, 180); document.removeEventListener('keydown', onKey); };
+      const onKey = (ev) => ev.key === 'Escape' && close();
+      wrap.addEventListener('click', (ev) => (ev.target === wrap || ev.target.closest('[data-close]')) && close());
+      document.addEventListener('keydown', onKey);
+      document.body.append(wrap);
+      requestAnimationFrame(() => wrap.classList.add('open'));
+    }
+
+    $('#cols').addEventListener('click', async (e) => {
+      const b = e.target.closest('button');
+      if (!b) return;
+      if (b.dataset.photo) return viewLicense(b.dataset.photo, b.closest('li').querySelector('.n').textContent);
+      b.disabled = true;
+      try {
+        if (b.dataset.next) {
+          const { ticket } = await api('/api/staff/next/' + b.dataset.next, { method: 'POST', pin });
+          toast(`Calling ${ticket.number} — ${ticket.name} · ${smsSummary(ticket)}`);
+        } else {
+          const { ticket } = await api(`/api/staff/tickets/${b.dataset.id}/${b.dataset.act}`, { method: 'POST', pin });
+          if (b.dataset.act === 'call') toast(`Calling ${ticket.number} again · ${smsSummary(ticket)}`);
+        }
+        load();
+      } catch (err) {
+        toast(err.message);
+        b.disabled = false;
+      }
+    });
+
+    $('#reset').onclick = async () => {
+      const ok = await confirmModal({
+        title: "Reset today's queue?",
+        message: 'All current tickets will be archived and numbering restarts from 001. This cannot be undone from here.',
+        confirmText: 'Reset queue',
+        danger: true,
+      });
+      if (!ok) return;
+      await api('/api/staff/reset', { method: 'POST', pin }).catch((e) => toast(e.message));
+      load();
+    };
+
+    // Staff needs unmasked phones, so poll its own endpoint instead of the public one.
+    setInterval(() => pin && !$('#console').hidden && !document.hidden && load(), POLL_MS);
+    document.addEventListener('visibilitychange', () => !document.hidden && pin && load());
+    if (pin) login(pin).catch(() => sessionStorage.removeItem('xpq-pin'));
+  </script>
+</body>
+</html>

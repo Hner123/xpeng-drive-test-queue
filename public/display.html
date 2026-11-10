@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>XPENG Queue — Lobby Display</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/style.css" />
+  <style>
+    /* Theme tokens — light (matching the kiosk) is the default; [data-theme=dark] for TV screens */
+    :root {
+      --d-bg: #f7f7f8; --d-ink: #111214; --d-ink-2: #5b5f66; --d-ink-3: #9aa0a8; --d-line: #e6e7ea;
+      --d-chip: #e6e7ea; --d-chip-ink: #111214; --d-idle: #d4d6da; --d-btn: #fff; --d-flash: #111214;
+      --d-shadow: rgba(17, 18, 20, 0.18);
+    }
+    :root[data-theme='dark'] {
+      --d-bg: #0d0e10; --d-ink: #fff; --d-ink-2: #c9cdd3; --d-ink-3: #8b9098; --d-line: #23252a;
+      --d-chip: #2b2e33; --d-chip-ink: #e3e6ea; --d-idle: #3a3d43; --d-btn: #1a1c20; --d-flash: #fff;
+      --d-shadow: rgba(0, 0, 0, 0.5);
+    }
+    body { background: var(--d-bg); color: var(--d-ink); overflow: hidden; }
+    .bar { display: flex; align-items: center; justify-content: space-between; padding: 28px 48px; border-bottom: 1px solid var(--d-line); }
+    .bar .brand { font-size: 24px; color: var(--d-ink); }
+    .bar .brand small { color: var(--d-ink-3); border-color: var(--d-chip); font-size: 15px; }
+    .bar-right { display: flex; align-items: center; gap: 20px; }
+    #clock { font-size: 28px; font-weight: 500; font-variant-numeric: tabular-nums; color: var(--d-ink-2); }
+    .board { display: grid; grid-template-columns: repeat(var(--n, 2), 1fr); height: calc(100vh - 100px); }
+    .lane { padding: 40px 48px; display: flex; flex-direction: column; }
+    .lane + .lane { border-left: 1px solid var(--d-line); }
+    .lane-head { display: flex; align-items: center; gap: 20px; }
+    .lane-head img { width: 200px; filter: drop-shadow(0 12px 18px var(--d-shadow)); }
+    .lane-head .name { font-size: 44px; font-weight: 600; }
+    .lane-head .sub { color: var(--d-ink-3); font-size: 18px; }
+    .label { font-size: 15px; letter-spacing: .24em; text-transform: uppercase; color: var(--d-ink-3); margin: 40px 0 12px; }
+    .now { font-size: clamp(80px, 11vw, 180px); font-weight: 700; letter-spacing: -.03em; line-height: 1; color: var(--accent); }
+    .now.flash { animation: flash 1s ease-in-out 4; }
+    @keyframes flash { 50% { color: var(--d-flash); text-shadow: 0 0 40px rgba(140,198,63,.8); } }
+    .now-name { font-size: 26px; color: var(--d-ink-2); margin-top: 8px; min-height: 32px; }
+    .idle { font-size: 64px; color: var(--d-idle); font-weight: 600; }
+    .next { display: flex; gap: 14px; flex-wrap: wrap; }
+    .next span { font-size: 34px; font-weight: 600; padding: 10px 22px; border: 1px solid var(--d-chip); border-radius: 12px; color: var(--d-chip-ink); }
+    .next .none { border: 0; color: var(--d-idle); padding-left: 0; }
+    .driving { color: var(--d-ink-3); font-size: 20px; }
+    .foot { margin-top: auto; color: var(--d-ink-3); font-size: 18px; }
+    .chip-btn { background: var(--d-btn); color: var(--d-ink-3); border: 1px solid var(--d-chip); border-radius: 999px; padding: 8px 14px; font-size: 13px; cursor: pointer; }
+    .chip-btn:hover { color: var(--d-ink); }
+    #sound { position: fixed; bottom: 16px; right: 16px; }
+
+    /* tablets in portrait and phones: stack the models and let the page scroll */
+    @media (max-width: 900px) {
+      body { overflow: auto; }
+      .bar { padding: 16px 20px; }
+      .bar .brand { font-size: 18px; }
+      .bar .brand small { font-size: 12px; }
+      .bar-right { gap: 12px; }
+      #clock { font-size: 20px; white-space: nowrap; }
+      .board { grid-template-columns: 1fr; height: auto; }
+      .lane { padding: 24px 20px 28px; }
+      .lane + .lane { border-left: 0; border-top: 1px solid var(--d-line); }
+      .lane-head { gap: 14px; }
+      .lane-head img { width: 130px; }
+      .lane-head .name { font-size: 30px; }
+      .lane-head .sub { font-size: 14px; }
+      .label { font-size: 12px; margin: 22px 0 8px; }
+      .now { font-size: clamp(64px, 22vw, 110px); }
+      .now-name { font-size: 18px; min-height: 24px; }
+      .idle { font-size: 44px; }
+      .next { gap: 8px; }
+      .next span { font-size: 22px; padding: 6px 14px; border-radius: 8px; }
+      .driving { font-size: 15px; }
+      .foot { margin-top: 18px; font-size: 14px; }
+      #sound { bottom: 12px; right: 12px; }
+    }
+    @media (max-width: 420px) {
+      .bar .brand small { display: none; }
+      #theme { padding: 6px 10px; font-size: 12px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="bar">
+    <span class="brand"><span class="logo" aria-hidden="true" style="width:44px;height:24px"></span>XPENG <small>Test Drive</small></span>
+    <div class="bar-right">
+      <button class="chip-btn" id="theme" title="Switch between dark and light"></button>
+      <div id="clock"></div>
+    </div>
+  </div>
+  <div class="board" id="board"></div>
+  <button class="chip-btn" id="sound">🔇 Click to enable sound</button>
+
+  <script src="/common.js"></script>
+  <script>
+    let soundOn = false;
+    let flashModel = null;
+
+    // Theme: ?theme=light|dark in the URL wins, then the last choice on this screen, else light.
+    const themeParam = new URLSearchParams(location.search).get('theme');
+    let theme = ['light', 'dark'].includes(themeParam) ? themeParam : (localStorage.getItem('xpq-display-theme') || 'light');
+    function applyTheme() {
+      document.documentElement.dataset.theme = theme;
+      $('#theme').textContent = theme === 'dark' ? '☀️ Light' : '🌙 Dark';
+    }
+    $('#theme').onclick = () => {
+      theme = theme === 'dark' ? 'light' : 'dark';
+      localStorage.setItem('xpq-display-theme', theme);
+      applyTheme();
+    };
+    applyTheme();
+    $('#sound').onclick = () => { soundOn = true; chime(); $('#sound').remove(); };
+
+    function tick() { $('#clock').textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }
+    tick(); setInterval(tick, 10000);
+
+    function render(state) {
+      const board = $('#board');
+      board.style.setProperty('--n', state.models.length);
+      board.innerHTML = state.models.map((m) => {
+        const mine = state.tickets.filter((t) => t.model === m.id);
+        const called = mine.filter((t) => t.status === 'called').sort((a, b) => b.calledAt - a.calledAt);
+        const waiting = mine.filter((t) => t.status === 'waiting').sort((a, b) => a.createdAt - b.createdAt);
+        const driving = mine.filter((t) => t.status === 'driving');
+        const cur = called[0];
+        return `<section class="lane">
+          <div class="lane-head"><img src="${m.image}" alt="" /><div><div class="name">${esc(m.name)}</div><div class="sub">${esc(m.tagline)}</div></div></div>
+          <div class="label">Now calling</div>
+          ${cur ? `<div class="now ${flashModel === m.id ? 'flash' : ''}">${cur.number}</div><div class="now-name">${esc(cur.name.split(' ')[0])}${called.length > 1 ? ` &nbsp;·&nbsp; also ${called.slice(1).map((t) => t.number).join(', ')}` : ''}</div>`
+                : `<div class="idle">—</div><div class="now-name"></div>`}
+          <div class="label">Up next</div>
+          <div class="next">${waiting.slice(0, 5).map((t) => `<span>${t.number}</span>`).join('') || '<span class="none">No one waiting</span>'}</div>
+          ${driving.length ? `<div class="label">On test drive</div><div class="driving">${driving.map((t) => t.number).join(' · ')}</div>` : ''}
+          <div class="foot">${m.waitingCount} waiting · est. ${m.estWaitMin} min</div>
+        </section>`;
+      }).join('');
+      flashModel = null;
+    }
+
+    live(render, (called) => {
+      flashModel = called.model;
+      if (soundOn) chime();
+    });
+  </script>
+</body>
+</html>

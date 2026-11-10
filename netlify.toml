@@ -1,0 +1,37 @@
+[build]
+  publish = "public"
+  functions = "netlify/functions"
+
+[functions]
+  node_bundler = "esbuild"
+
+# /staff and /display without the .html (pretty URLs also do this, but be explicit)
+[[redirects]]
+  from = "/staff"
+  to = "/staff.html"
+  status = 200
+
+[[redirects]]
+  from = "/display"
+  to = "/display.html"
+  status = 200
+
+[[redirects]]
+  from = "/qr"
+  to = "/qr.html"
+  status = 200
+
+[[headers]]
+  for = "/*.html"
+  [headers.values]
+    Cache-Control = "no-cache"
+
+[[headers]]
+  for = "/*.js"
+  [headers.values]
+    Cache-Control = "no-cache"
+
+[[headers]]
+  for = "/*.css"
+  [headers.values]
+    Cache-Control = "no-cache"
